@@ -1,11 +1,9 @@
 # !/usr/bin/env python3
 
 import argparse
-import json
 import os
 import sys
 
-import pop3
 from pop3 import POP3, POP3_PORT, POP3_SERVER
 
 SENDER = "From"
@@ -31,32 +29,6 @@ def main():
     print(pop3_con.connect())
     if args.console:
         pop3_con.run_batch()
-
-
-def send_mail(smtp_con):
-    """
-
-    :type smtp_con: SMTP
-    :return:
-    """
-    with open("input.json", 'r', encoding=smtp.ENCODING) as f:
-        config = json.loads(f.read())
-    sender = config[SENDER]
-    recievers = config[RECEIVERS]
-    subject = config[SUBJECT]
-    attachments = config[ATTACHMENTS]
-    with open(config[TEXT], 'r', encoding='utf8') as f:
-        text_lines = f.readlines()
-    message = Message(sender, recievers, subject, text_lines, attachments)
-    email = message.get_email()
-    print(smtp_con.ehllo())
-    print(smtp_con.auth())
-    print(smtp_con.mail_from(sender))
-    for reciever in recievers:
-        print(smtp_con.rcpt_to(reciever))
-    print(smtp_con.data())
-    print(smtp_con.send(email))
-    print(smtp_con.quit())
 
 
 if __name__ == '__main__':

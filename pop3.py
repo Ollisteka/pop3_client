@@ -4,7 +4,6 @@ import re
 import socket
 import ssl
 
-from errors import TransientError, ProtectedError, PermanentError
 
 POP3_PORT = 995
 POP3_SERVER = 'pop.yandex.ru'  # 'smtp-relay.gmail.com'
@@ -60,14 +59,70 @@ class POP3:
 
     def retrieve(self, letter_number):
         rep = self.send("RETR " + letter_number + CRLF)
-        return rep
+        boundary = self.find_boundary(rep)
+        mime_objects = self.find_mime(boundary, rep)
+        result = []
+        for obj in mime_objects:
+            result.append(self.parse_mime(obj))
+
+        for element in result:
+            if isinstance(element, tuple):
+                print("Saving attachment " + element[0])
+                with open(element[0], 'wb') as f:
+                    f.write(element[1])
+            else:
+                print(element)
+
+    def parse_mime(self, text):
+        coded_reg = re.compile('\n\n(.+==)', re.DOTALL)
+        coded_reg2 = re.compile('\r\n\r\n(.+?)--', re.DOTALL)
+        plain_reg = re.compile('Content-Transfer-Encoding:.*?\r\n\r\n(.+)--',
+                               re.DOTALL)
+        filename_reg = re.compile('filename="(.*)"')
+        if "text" in text:
+            if "base64" in text:
+                coded = re.search(coded_reg, text).group(1)
+                return base64.b64decode(coded)
+            else:
+                res = re.search(plain_reg, text)
+                return res.group(1)
+        elif "application/octet-stream" in text \
+                or "Content-Disposition: attachment" in text:
+            coded = re.search(coded_reg, text)
+            if not coded:
+                coded = re.search(coded_reg2, text)
+            filename = self.parse_filename(re.search(filename_reg,
+                                                     text).group(1))
+            coded_text = coded.group(1).strip('\n').strip('\r')
+            return filename, base64.b64decode(coded_text)
+
+    def parse_filename(self, name):
+        if "=?UTF-8?B?" in name:
+            extracted = name[10:-2]
+            return base64.b64decode(extracted).decode('utf8')
+        return name
+
+    def find_mime(self, boundary, text):
+        regexp = re.compile(r'(?=(--{0}(.+?)--{0}))'.format(boundary),
+                            re.DOTALL)
+        matches = re.finditer(regexp, text)
+        if matches:
+            result = []
+            for match in matches:
+                result.append(match.group(1))
+            return result
+
+    def find_boundary(self, text):
+        match = re.search('boundary="(.+)"', text)
+        if match:
+            return match.group(1)
 
     def stat(self):
         rep = self.send("STAT" + CRLF)
         return rep
 
     def list(self, letter_number=None):
-        if letter_number == None:
+        if letter_number is None:
             letter_number = ""
         rep = self.send("LIST " + letter_number + CRLF)
         return rep
