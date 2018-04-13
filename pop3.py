@@ -4,7 +4,6 @@ import re
 import socket
 import ssl
 
-
 POP3_PORT = 995
 POP3_SERVER = 'pop.yandex.ru'  # 'smtp-relay.gmail.com'
 
@@ -59,12 +58,19 @@ class POP3:
 
     def retrieve(self, letter_number):
         rep = self.send("RETR " + letter_number + CRLF)
-        boundary = self.find_boundary(rep)
-        mime_objects = self.find_mime(boundary, rep)
         result = []
-        for obj in mime_objects:
-            result.append(self.parse_mime(obj))
 
+        print(self.parse_sender(rep))
+        print(self.parse_subject(rep))
+        print(self.parse_date(rep))
+
+        boundary = self.find_boundary(rep)
+        if boundary:
+            mime_objects = self.find_mime(boundary, rep)
+            for obj in mime_objects:
+                result.append(self.parse_mime(obj))
+        else:
+            result.append(self.find_text(rep))
         for element in result:
             if isinstance(element, tuple):
                 print("Saving attachment " + element[0])
@@ -73,10 +79,49 @@ class POP3:
             else:
                 print(element)
 
+    def parse_sender(self, text):
+        from_reg_base64 = re.compile("From: (=\?.*\?=) <(.*)>")
+        from_reg_no_base64 = re.compile("From: (.*) <(.*)>")
+
+        sender_match = re.search(from_reg_base64, text)
+        if sender_match:
+            name = self.parse_base64_string(sender_match.group(1))
+            mail = sender_match.group(2)
+            return "From: {0} ({1})".format(name, mail)
+        sender_match = re.search(from_reg_no_base64, text)
+        name = sender_match.group(1)
+        mail = sender_match.group(2)
+        return "From: {0} ({1})".format(name, mail)
+
+    def parse_date(self, text):
+        date_reg = re.compile("Date: .*")
+        return re.search(date_reg, text).group(0)
+
+    def parse_subject(self, text):
+        subj_reg_base64 = re.compile("Subject: (=\?.*\?=)")
+        subj_reg__no_base64 = re.compile("Subject: (.*)")
+
+        subj_match = re.search(subj_reg_base64, text)
+        if subj_match:
+            topic = self.parse_base64_string(subj_match.group(1))
+            return "Subject: {0}".format(topic)
+        subj_match = re.search(subj_reg__no_base64, text)
+        if subj_match:
+            return "Subject: {0}".format(subj_match.group(1))
+        return "Subject: (Без темы)"
+
+    def find_text(self, text):
+        text_reg = re.compile("\n\n(.*)\.", re.DOTALL)
+        text_reg2 = re.compile("\r\n\r\n(.*)\.", re.DOTALL)
+        plain_text = re.search(text_reg, text)
+        if not plain_text:
+            plain_text = re.search(text_reg2, text)
+        return plain_text.group(1)
+
     def parse_mime(self, text):
         coded_reg = re.compile('\n\n(.+==)', re.DOTALL)
         coded_reg2 = re.compile('\r\n\r\n(.+?)--', re.DOTALL)
-        plain_reg = re.compile('Content-Transfer-Encoding:.*?\r\n\r\n(.+)--',
+        plain_reg = re.compile('Content-Transfer-Encoding:.*?\r\n\r\n(.+?)--',
                                re.DOTALL)
         filename_reg = re.compile('filename="(.*)"')
         if "text" in text:
@@ -84,22 +129,31 @@ class POP3:
                 coded = re.search(coded_reg, text).group(1)
                 return base64.b64decode(coded)
             else:
-                res = re.search(plain_reg, text)
-                return res.group(1)
-        elif "application/octet-stream" in text \
-                or "Content-Disposition: attachment" in text:
+                lines = re.search(plain_reg, text).group(1).split("\n")
+                result = []
+                for line in lines:
+                    if not line:
+                        continue
+                    if line[0] == '.':
+                        line = line[1:]
+                    result.append(line)
+                return "\n".join(result)
+        elif "Content-Disposition: attachment" in text:
             coded = re.search(coded_reg, text)
             if not coded:
                 coded = re.search(coded_reg2, text)
-            filename = self.parse_filename(re.search(filename_reg,
-                                                     text).group(1))
+            filename = self.parse_base64_string(re.search(filename_reg,
+                                                          text).group(1))
             coded_text = coded.group(1).strip('\n').strip('\r')
             return filename, base64.b64decode(coded_text)
 
-    def parse_filename(self, name):
-        if "=?UTF-8?B?" in name:
-            extracted = name[10:-2]
-            return base64.b64decode(extracted).decode('utf8')
+    def parse_base64_string(self, name):
+        encoding_regex = re.compile("=\?(.+)\?B\?(.+)\?=")
+        match = re.search(encoding_regex, name)
+        if match:
+            encoding = match.group(1)
+            filename = match.group(2)
+            return base64.b64decode(filename).decode(encoding)
         return name
 
     def find_mime(self, boundary, text):
@@ -113,7 +167,7 @@ class POP3:
             return result
 
     def find_boundary(self, text):
-        match = re.search('boundary="(.+)"', text)
+        match = re.search('boundary="(.+?)"', text)
         if match:
             return match.group(1)
 
@@ -153,8 +207,7 @@ class POP3:
 
     def auth(self, username="inet.task@yandex.ru", password="inet.task."):
         print(self.user(username))
-        print(self.password(password))
-        # return rep
+        return self.password(password)
 
     def send(self, command, text=True):
         """
