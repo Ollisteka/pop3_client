@@ -80,8 +80,8 @@ class POP3:
                 print(element)
 
     def parse_sender(self, text):
-        from_reg_base64 = re.compile("From: (=\?.*\?=) <(.*)>")
-        from_reg_no_base64 = re.compile("From: (.*) <(.*)>")
+        from_reg_base64 = re.compile("From: (=\?.*\?=).*?<(.*)>")
+        from_reg_no_base64 = re.compile("From: (.*).*?<(.*)>")
 
         sender_match = re.search(from_reg_base64, text)
         if sender_match:
