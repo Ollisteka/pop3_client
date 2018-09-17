@@ -5,7 +5,7 @@ import socket
 import ssl
 
 POP3_PORT = 995
-POP3_SERVER = 'pop.yandex.ru'  # 'smtp-relay.gmail.com'
+POP3_SERVER = 'pop.yandex.ru'
 
 FROM_MAIL = "inet.task@yandex.com"
 
@@ -43,20 +43,88 @@ class POP3:
                          "QUIT": self.quit,
                          }
 
-    def top(self, mail_num, lines_shown):
-        mes = "TOP " + str(mail_num) + " " + str(lines_shown) + CRLF
-        rep = self.send(mes)
+    def stat(self):
+        """
+        Learn, how many letters there are on the server and the total size
+        :return:
+        """
+        rep = self.send("STAT" + CRLF)
+        return rep
+
+    def list(self, letter_number=None):
+        """
+        Gets info about every letter, if no arguments are given,
+        or about one passed as an argument
+        :param letter_number:
+        :return:
+        """
+        if letter_number is None:
+            letter_number = ""
+        rep = self.send(f"LIST {letter_number}" + CRLF)
+        return rep
+
+    def user(self, username):
+        """
+        Sends username to server. The next command must be PASS.
+        :param username:
+        :return:
+        """
+        rep = self.send(f"USER {username}" + CRLF)
+        return rep
+
+    def password(self, password):
+        """
+        Sends password to server. The previous command must be USER.
+        :param password:
+        :return:
+        """
+        rep = self.send(f"PASS {password}" + CRLF)
+        return rep
+
+    def auth(self, username="inet.task@yandex.ru", password="inet.task."):
+        """
+        USER and PASS commands combined.
+        :param username:
+        :param password:
+        :return:
+        """
+        print(self.user(username))
+        return self.password(password)
+
+    def delete(self, letter_number):
+        """
+        Mark letter as to be deleted.
+        :param letter_number:
+        :return:
+        """
+        rep = self.send(f"DELE {letter_number}" + CRLF)
         return rep
 
     def reset(self):
+        """
+        Cancel deletion marks.
+        :return:
+        """
         rep = self.send("RSET" + CRLF)
         return rep
 
-    def noop(self):
-        rep = self.send("NOOP" + CRLF)
+    def top(self, mail_num, lines_shown=0):
+        """
+        Shows headers of <mail_num> letter, and <lines_shown> of the message itself.
+        :param mail_num:
+        :param lines_shown:
+        :return:
+        """
+        mes = f"TOP {mail_num} {lines_shown}" + CRLF
+        rep = self.send(mes)
         return rep
 
     def retrieve(self, letter_number):
+        """
+        Download letter from the server
+        :param letter_number:
+        :return:
+        """
         rep = self.send("RETR " + letter_number + CRLF)
         result = []
 
@@ -171,23 +239,17 @@ class POP3:
         if match:
             return match.group(1)
 
-    def stat(self):
-        rep = self.send("STAT" + CRLF)
-        return rep
-
-    def list(self, letter_number=None):
-        if letter_number is None:
-            letter_number = ""
-        rep = self.send("LIST " + letter_number + CRLF)
-        return rep
-
-    def delete(self, letter_number):
-        rep = self.send("DELE " + letter_number + CRLF)
+    def noop(self):
+        """
+        Empty keep-alive message.
+        :return:
+        """
+        rep = self.send("NOOP" + CRLF)
         return rep
 
     def quit(self):
         """
-        End the session
+        Ends the session. Server will now delete marked messages
         :return:
         """
         rep = self.send("QUIT" + CRLF)
@@ -195,19 +257,6 @@ class POP3:
         self.control_socket.shutdown(socket.SHUT_RDWR)
         self.control_socket.close()
         return rep
-
-    def user(self, username):
-        rep = self.send("USER " + username + CRLF)
-        return rep
-
-    def password(self, password):
-        mes = "PASS " + password + CRLF
-        rep = self.send(mes)
-        return rep
-
-    def auth(self, username="inet.task@yandex.ru", password="inet.task."):
-        print(self.user(username))
-        return self.password(password)
 
     def send(self, command, text=True):
         """
@@ -245,15 +294,8 @@ class POP3:
         :return:
         """
         reply = self.__get_full_reply()
+        # todo parse reply to find if it is an +OK one or an -ERR
         return reply
-        # c = reply[:1]
-        # if c in {'1', '2', '3'}:
-        #     return reply
-        # if c == '4':
-        #     raise TransientError(reply)
-        # if c == '5':
-        #     raise PermanentError(reply)
-        # raise ProtectedError(reply)
 
     def __get_full_reply(self):
         """
@@ -273,7 +315,7 @@ class POP3:
 
     def run_batch(self):
         """
-        Runs an ftp client in console mode
+        Runs a POP3 client in console mode
         :return:
         """
         while not self.closed:
@@ -287,9 +329,7 @@ class POP3:
                         print(
                             self.commands[command](arguments[0]))
                     if len(arguments) == 2:
-                        print(
-                            self.commands[command](arguments[0],
-                                                   arguments[1]))
+                        print(self.commands[command](arguments[0], arguments[1]))
                 else:
                     print(self.commands[command]())
             else:
